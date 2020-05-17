@@ -1,6 +1,6 @@
 # Parse and play ABC
 
-Turn ABC notation
+Turn [ABC notation](http://abcnotation.com/wiki/abc:standard:v2.1)
 
 ```
 X:1
