@@ -37,3 +37,8 @@ Pipe the two programs to convert ABC into text.
 
 - `rpi/gpio_tone` reads binary drives a GPIO output.
 - Connect the pin to a buzzer to listen to the music. 🎶
+
+## Known bugs
+
+- Some keys (C#, Cb, F#) are wrong.
+- Sharp and flat signs apply only to a note; it should apply to the entire measure. 
