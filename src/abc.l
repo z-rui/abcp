@@ -12,11 +12,10 @@
 #include "output.h"
 
 #define die(fmt, ...) do { fprintf(stderr, fmt"\n", ##__VA_ARGS__); exit(1); } while (0)
-#define NO_KEY 0xaa
 
 static struct {
 	struct frac M;  // meter
-	unsigned K:8;  // key
+	signed K:4;  // key
 	unsigned char L;  // unit length = 1/L
 	unsigned short Q;  // tempo (1/4 = 60/Q s)
 
@@ -29,7 +28,7 @@ static struct {
 	int pos, rep_begin, rep_end;
 } ctx = {
 	.M = {4, 4},
-	.K = NO_KEY,
+	.K = KEY_NONE,
 	.L = 4,
 	.Q = 120,
 };
@@ -63,7 +62,7 @@ X:{ws}*{int}{ws}*\n	fputs(yytext, stderr); BEGIN(HEADER);
 
 }
 
-<HEADER>\n	if (ctx.K != NO_KEY) BEGIN(BODY);
+<HEADER>\n	if (ctx.K != KEY_NONE) BEGIN(BODY);
 <BODY_F>\n	BEGIN(BODY);
 <INLINE_F>"]"	BEGIN(BODY);
 
@@ -212,20 +211,31 @@ Q:{ws}*"1/"{int}={int}{ws}*/[]\n]	{
 
 int yywrap() { return 1; }
 
-static int letter_to_pitch(char letter, unsigned char key)
+static int letter_to_pitch(char letter, int key)
 {
-	static const char letters[] = "CDEFGAB";
+	static const char letters[] = "FCGDAEB";
 	/* p = A4 + 12 * log2(f/440); A4 = 69 (MIDI standard) */
 	static const unsigned char values[] = {
-		60, 62, 64, 65, 67, 69, 71,
+		65, 60, 67, 62, 69, 64, 71,
 	};
 	const char *p = strchr(letters, toupper(letter));
 	int idx, pitch;
 	assert(p != NULL && *p != '\0');
 	idx = p - letters;
 	pitch = values[idx];
-	if (key & (1 << idx))
-		pitch += (key & 0x80) ? -1 : 1;
+
+	//fprintf(stderr, "key = %d\n", key);
+	/* Determine key effect
+	 * bit 6 5 4 3 2 1 0
+	 *     B E A D G C F
+	 *     1 1 1 1 0 0 0  - 0x7f << KEY_A(3) => G/C/F sharp
+	 *     0 1 1 1 1 1 1  - 0x7f >> -KEY_F(-1) => B flat
+	 */
+	if (key >= 0)
+		pitch += !((0x7f << key) & (1 << idx));
+	else
+		pitch -= !((0x7f >> -key) & (1 << idx));
+
 	return pitch;
 }
 
@@ -251,7 +261,7 @@ struct note parse_note(const char *s)
 		note.freq = 0;
 	} else {
 		int pitch = 0;
-		unsigned char key = 0;
+		int key = 0;
 
 		if (accidental != INT_MIN)
 			pitch += accidental; 
@@ -350,12 +360,14 @@ struct duplet parse_duplets(const char *s)
 }
 
 unsigned char parse_key(const char *s) {
-	static const unsigned char keys[] = {
+	static const signed char keys[] = {
 		KEY_C, KEY_Db, KEY_D, KEY_Eb, KEY_E, KEY_F,
 		KEY_Gb, KEY_G, KEY_Ab, KEY_A, KEY_Bb, KEY_B,
 	};
+	const char *key_sig = s;
 	int accidental = 0;
 	int pitch;
+	int key;
 
 	while (isspace(*s))
 		s++;
@@ -370,5 +382,20 @@ unsigned char parse_key(const char *s) {
 	}
 	if (*s == 'm' && (s[1] == 'i' || s[1] == '\0'))
 		pitch += 3;  // minor -> relative major
-	return keys[pitch % 12];
+	key = keys[pitch % 12];
+
+	fprintf(stderr, "key = %d, accidental = %d\n", key, accidental);
+	if (accidental == 1) {
+		if (key == KEY_Db)
+			key = KEY_Cs;  // 5b -> 7#
+		else if (key == KEY_Gb)
+			key = KEY_Fs;  // 6b -> 6#
+	} else if (accidental == -1) {
+		if (key == KEY_B)
+			key = KEY_Cb;  // 5# -> 7b
+	}
+	if (key * accidental < 0)
+		die("bad key signature: %s", key_sig);
+
+	return key;
 }

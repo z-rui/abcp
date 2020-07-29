@@ -40,5 +40,4 @@ Pipe the two programs to convert ABC into text.
 
 ## Known bugs
 
-- Some keys (C#, Cb, F#) are wrong.
 - Sharp and flat signs apply only to a note; it should apply to the entire measure. 
